@@ -1,0 +1,10 @@
+loyalty-db/node_modules
+loyalty-db/config.js
+loyalty-api/node_modules
+loyalty-api/package-lock.json
+loyalty-db/package-lock.json
+loyalty-api/npm-debug.log
+loyalty-api/mailing/config.js
+loyalty-robot/node_modules
+loyalty-robot/package-lock.json
+loyalty-api/public/*

@@ -1,0 +1,226 @@
+'use strict'
+
+const debug = require('debug')('loyalty-api:*')
+const {Transaction, DailyBalance} = require('loyalty-db')
+
+// const fs = require('fs')
+// fs.appendFileSync('log.txt', '\n Estoy entrando con este saldo: '+saldo_pendiente)
+// const {map} = require('p-iteration')
+const calculaSaldo = async (cuenta, id_comercio, fecha) =>{  
+  try{
+    let transacciones_usadas = []
+    let saldo_favor = ''
+    let saldo = 0
+    let sobro = 0
+    // Obtenemos las transacciones de pago con puntos:
+    let transactionsPaymentPoints = await Transaction.transactionsPaymentPoints(cuenta, fecha, id_comercio)
+    let transaccionesPago = []
+    for (let item of transactionsPaymentPoints){
+      let transactionCalculatePoints = await Transaction.transactionCalculatePoints(cuenta, id_comercio, item.fecha, transacciones_usadas)
+      transaccionesPago.push({transaccion:item.id_transaccion ,saldo_pendiente: item.puntos,transactionCalculatePoints: transactionCalculatePoints} )
+    }    
+    for(let item1 of transaccionesPago){
+      let saldo_pendiente = Math.abs(Number(item1.saldo_pendiente))      
+      let i = true
+      let contador = 0
+      if(item1.transactionCalculatePoints.length > 0){
+        while((i) && (item1.transactionCalculatePoints.length > contador)){          
+          if(transacciones_usadas.indexOf(item1.transactionCalculatePoints[contador].id_transaccion_detalle) === -1){
+            let disp = item1.transactionCalculatePoints[contador].puntos
+            if(saldo_pendiente > 0){              
+              if(saldo_favor !== ''){                
+                let saldoFavor = saldo_favor.split(';')
+                if(Number(saldoFavor[0]) === item1.transactionCalculatePoints[contador].id_transaccion_detalle){                  
+                  saldo_favor = ''
+                  saldo_pendiente -= Number(saldoFavor[1])
+                  if(saldo_pendiente > 0){                    
+                    transacciones_usadas.push(item1.transactionCalculatePoints[contador].id_transaccion_detalle)
+                  }else if(saldo_pendiente === 0){                    
+                    transacciones_usadas.push(item1.transactionCalculatePoints[contador].id_transaccion_detalle)
+                    saldo_pendiente = 0
+                    i = false
+                  }else if(saldo_pendiente < 0){                    
+                    saldo_favor = item1.transactionCalculatePoints[contador].id_transaccion_detalle + ';' + (saldo_pendiente * -1) + ';' + item1.transactionCalculatePoints[contador].vig
+                    saldo_pendiente = 0
+                    i = false
+                  }
+                }else{                  
+                  saldo_pendiente -= Number(disp)
+                  if(saldo_pendiente > 0){                    
+                    transacciones_usadas.push(item1.transactionCalculatePoints[contador].id_transaccion_detalle)
+                  }else if(saldo_pendiente === 0){                    
+                    transacciones_usadas.push(item1.transactionCalculatePoints[contador].id_transaccion_detalle)
+                    saldo_pendiente = 0
+                    i = false
+                  }else if(saldo_pendiente < 0){                    
+                    saldo_favor = item1.transactionCalculatePoints[contador].id_transaccion_detalle + ';' + (saldo_pendiente * -1) + ';' + item1.transactionCalculatePoints[contador].vig
+                    saldo_pendiente = 0
+                    i = false
+                  }
+                }
+                //Fin del saldo favor inexistente
+              }else{                
+                saldo_pendiente -= Number(disp)
+                if(saldo_pendiente > 0){                  
+                  transacciones_usadas.push(item1.transactionCalculatePoints[contador].id_transaccion_detalle)
+                }else if(saldo_pendiente === 0){                  
+                  transacciones_usadas.push(item1.transactionCalculatePoints[contador].id_transaccion_detalle)
+                  saldo_pendiente = 0
+                  i = false
+                }else if(saldo_pendiente < 0){                  
+                  saldo_favor = item1.transactionCalculatePoints[contador].id_transaccion_detalle + ';' + (saldo_pendiente * -1) + ';' + item1.transactionCalculatePoints[contador].vig
+                  saldo_pendiente = 0
+                  i = false
+                }
+              }
+            }
+          }
+          contador ++
+        }
+      }
+    }
+    if(saldo_favor !== ''){      
+      let saldoFavor = saldo_favor.split(';')
+      saldo_favor = ''
+      let fechaSaldoFavor = new Date(saldoFavor[2])
+      let fechaFuncion = (fecha === '') ? new Date() : new Date(fecha)      
+      // 2019-01-10 >= 2019-01-14 || 2019-01-11 === ''
+      if(fechaSaldoFavor >= fechaFuncion || saldoFavor[2] === ''){        
+        sobro = Number(saldoFavor[1])
+        transacciones_usadas.push(saldoFavor[0])
+      }
+    }
+    // Falta el ultimo paso del saldo
+    let transactionPointsFree = await Transaction.transactionPointsFree(cuenta, fecha, transacciones_usadas, id_comercio)    
+    let vigentes = Number(transactionPointsFree[0].total)    
+    saldo += vigentes
+    saldo += sobro
+    return saldo > 0 ? saldo.toFixed(2) : saldo
+  }catch(err){
+    return err
+  }
+}
+
+module.exports = {
+  async consultaSaldo (cuenta, id_comercio, fecha) {    
+    try{
+      // vemos si ya tiene saldo al dia:
+      /*
+      let saldoAlDia = await DailyBalance.getSaldoDiario(cuenta, id_comercio)
+      if(saldoAlDia.length > 0){
+        let saldo = saldoAlDia[0].saldo
+        return saldo
+      }else{
+        let saldo = await calculaSaldo(cuenta, id_comercio, fecha)
+        await DailyBalance.insertSaldoDiario({id_comercio: id_comercio, cuenta: cuenta, saldo: saldo})
+        return saldo
+      }
+      */
+      let saldo = await calculaSaldo(cuenta, id_comercio, fecha)
+      return saldo
+    } catch(err) {
+      return err
+    }
+  },
+  async consultaSaldoFecha (cuenta, id_comercio, fecha) {    
+    try{
+      let saldo = await calculaSaldo(cuenta, id_comercio, fecha)
+      return saldo
+    } catch(err) {
+      return err
+    }
+  },
+  async saldoAhora(cuenta, id_comercio, fecha){    
+    try{
+      let transacciones_usadas = []
+      let saldo_favor = ''
+      let saldo = 0
+      let sobro = 0
+      // Obtenemos las transacciones de pago con puntos:
+      let transactionsPaymentPoints = await Transaction.transactionsPaymentPoints(cuenta, fecha, id_comercio)
+      let transaccionesPago = []
+      for (let item of transactionsPaymentPoints){
+        let transactionCalculatePoints = await Transaction.transactionCalculatePoints(cuenta, id_comercio, item.fecha, transacciones_usadas)
+        transaccionesPago.push({transaccion:item.id_transaccion ,saldo_pendiente: item.puntos,transactionCalculatePoints: transactionCalculatePoints} )
+      }
+      for(let item1 of transaccionesPago){
+        let saldo_pendiente = Math.abs(Number(item1.saldo_pendiente))
+        let i = true
+        let contador = 0
+        if(item1.transactionCalculatePoints.length > 0){
+          while((i) && (item1.transactionCalculatePoints.length > contador)){
+            if(transacciones_usadas.indexOf(item1.transactionCalculatePoints[contador].id_transaccion_detalle) === -1){
+              let disp = item1.transactionCalculatePoints[contador].puntos
+              if(saldo_pendiente > 0){
+                if(saldo_favor !== ''){
+                  let saldoFavor = saldo_favor.split(';')
+                  if(Number(saldoFavor[0]) === item1.transactionCalculatePoints[contador].id_transaccion_detalle){
+                    saldo_favor = ''
+                    saldo_pendiente -= Number(saldoFavor[1])
+                    if(saldo_pendiente > 0){
+                      transacciones_usadas.push(item1.transactionCalculatePoints[contador].id_transaccion_detalle)
+                    }else if(saldo_pendiente === 0){
+                      transacciones_usadas.push(item1.transactionCalculatePoints[contador].id_transaccion_detalle)
+                      saldo_pendiente = 0
+                      i = false
+                    }else if(saldo_pendiente < 0){
+                      saldo_favor = item1.transactionCalculatePoints[contador].id_transaccion_detalle + ';' + (saldo_pendiente * -1) + ';' + item1.transactionCalculatePoints[contador].vig
+                      saldo_pendiente = 0
+                      i = false
+                    }
+                  }else{
+                    saldo_pendiente -= Number(disp)
+                    if(saldo_pendiente > 0){
+                      transacciones_usadas.push(item1.transactionCalculatePoints[contador].id_transaccion_detalle)
+                    }else if(saldo_pendiente === 0){
+                      transacciones_usadas.push(item1.transactionCalculatePoints[contador].id_transaccion_detalle)
+                      saldo_pendiente = 0
+                      i = false
+                    }else if(saldo_pendiente < 0){
+                      saldo_favor = item1.transactionCalculatePoints[contador].id_transaccion_detalle + ';' + (saldo_pendiente * -1) + ';' + item1.transactionCalculatePoints[contador].vig
+                      saldo_pendiente = 0
+                      i = false
+                    }
+                  }
+                  //Fin del saldo favor inexistente
+                }else{
+                  saldo_pendiente -= Number(disp)
+                  if(saldo_pendiente > 0){
+                    transacciones_usadas.push(item1.transactionCalculatePoints[contador].id_transaccion_detalle)
+                  }else if(saldo_pendiente === 0){
+                    transacciones_usadas.push(item1.transactionCalculatePoints[contador].id_transaccion_detalle)
+                    saldo_pendiente = 0
+                    i = false
+                  }else if(saldo_pendiente < 0){
+                    saldo_favor = item1.transactionCalculatePoints[contador].id_transaccion_detalle + ';' + (saldo_pendiente * -1) + ';' + item1.transactionCalculatePoints[contador].vig
+                    saldo_pendiente = 0
+                    i = false
+                  }
+                }
+              }
+            }
+            contador ++
+          }
+        }
+      }
+      if(saldo_favor !== ''){
+        let saldoFavor = saldo_favor.split(';')
+        saldo_favor = ''
+        let fechaSaldoFavor = new Date(saldoFavor[2])
+        let fechaFuncion = (fecha === '') ? new Date() : new Date(fecha)
+        if(fechaSaldoFavor >= fechaFuncion || saldoFavor[2] === ''){
+          sobro = Number(saldoFavor[1])
+          transacciones_usadas.push(saldoFavor[0])
+        }
+      }
+      // Falta el ultimo paso del saldo
+      let transactionPointsFree = await Transaction.transactionPointsFree(cuenta, fecha, transacciones_usadas, id_comercio)
+      let vigentes = Number(transactionPointsFree[0].total)
+      saldo += vigentes
+      saldo += sobro
+      return saldo > 0 ? saldo.toFixed(2) : saldo
+    }catch(err){
+      return err
+    }
+  }
+}

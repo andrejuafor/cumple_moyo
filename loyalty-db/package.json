@@ -1,0 +1,22 @@
+{
+  "name": "loyalty-db",
+  "version": "1.0.0",
+  "description": "Clases de base de datos para el api de LR",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/loyaltyrefunds/apiLoyaltyRefunds.git"
+  },
+  "author": "Andres Gómez",
+  "license": "ISC",
+  "dependencies": {
+    "crypto-js": "^3.1.9-1",
+    "mysql": "^2.15.0",
+    "p-iteration": "^1.1.7",
+    "promise-mysql": "^3.2.1",
+    "uuid": "^3.3.2"
+  }
+}
